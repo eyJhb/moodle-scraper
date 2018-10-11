@@ -35,6 +35,12 @@ export MOODLE_USERNAME=email@student.aau.dk
 export MOODLE_PASSWORD=password
 ```
 
+Running
+
+```
+source .env
+python3 moodle.py
+```
 
 ## How to use with docker
 This container just install the requirements (no file currently), so it can use the scraper. 

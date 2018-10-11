@@ -1,12 +1,9 @@
 from bs4 import BeautifulSoup
 import urllib
 
-
-class modtype(object):
-    def __init__(self, reqSession, logger, urlBase):
-        self.s = reqSession
-        self.log = logger
-        self.url_base = urlBase
+class Modtype(object):
+    def __init__(self, p):
+        self.p = p
 
     def getFileid(self, url):
         try:
@@ -22,11 +19,12 @@ class modtype(object):
             resourceAccesshide.decompose()
 
         link = bs.find("a")["href"]
-        name = bs.find("span", {"class": "instancename"}).getText()
         fileid = self.getFileid(link)
+        name = bs.find("span", {"class": "instancename"}).getText()
+        name = self.p.utils.sanitizeInput(name)
         
         if not fileid:
-            self.log.error("Could not get fileid for url - %s", resourceLink)
+            self.p.log.error("Could not get fileid for url - %s", resourceLink)
             return False
 
         return {"name": name, "link": link, "fileid": fileid}
@@ -39,8 +37,9 @@ class modtype(object):
 
         link = bs.find("a")["href"]
         name = bs.find("span", {"class": "instancename"}).getText()
+        name = self.p.utils.sanitizeInput(name)
 
-        req = self.s.get(link)
+        req = self.p.s.get(link)
         bsPage = BeautifulSoup(req.text, "html.parser")
         mainContent = bsPage.find("div", {"role": "main"})
 
@@ -57,15 +56,16 @@ class modtype(object):
 
         link = bs.find("a")["href"]
         name = bs.find("span", {"class": "instancename"}).getText()
+        name = self.p.utils.sanitizeInput(name)
+        #remove any `.` in foldernames
+        name = name.replace(".", "")
 
         # get folder
-        req = self.s.get(link)
-
+        req = self.p.s.get(link)
         bsFolder = BeautifulSoup(req.text, "html.parser")
-
         mainContent = bsFolder.find("div", {"role": "main"})
-
         text = mainContent.find("div", {"class": "generalbox"})
+
         if text:
             text = text.getText()
         else:
@@ -77,6 +77,7 @@ class modtype(object):
             for folderFile in folder.findAll("span", {"class": "fp-filename-icon"}):
                 fileLink = folderFile.find("a")["href"]
                 fileName = folderFile.find("span", {"class": "fp-filename"}).getText()
+                fileName = self.p.utils.sanitizeInput(fileName)
                 files.append({"name": fileName, "link": fileLink})
 
 
