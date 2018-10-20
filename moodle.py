@@ -1,16 +1,11 @@
 import requests
 from bs4 import BeautifulSoup
 import logging
-import json
-import os
-import re
-from modtypeParser import Modtype
-from utils import Utils 
-from database import Database
+from modtype import Modtype
 
 logging.basicConfig()
 
-class moodle(object):
+class Moodle(object):
     def __init__(self, username, password):
         self.s = requests.session()
 
@@ -24,38 +19,6 @@ class moodle(object):
         self.log.setLevel(logging.DEBUG)
 
         self.modtype = Modtype(self)
-        self.utils = Utils(self)
-        self.database = Database(self)
-
-
-        self.files_database = "database.json"
-        self.files_output = "files/"
-
-        self.db = self.database.load()
-        self.log.debug("test")
-        if not self.initCheck():
-            logging.error("Could not initialize Moodle")
-            exit()
-
-    def initCheck(self):
-        #check that we have our database file
-        if not self.utils.fileExists(self.files_database):
-            self.log.error("Our database file '%s' does not exists", self.files_database)
-            return False
-        #check for our {files: []} in our json
-        try:
-            self.db["files"]
-        except:
-            self.log.error("Our database does not contain {\"files\": []}")
-            return False
-        
-        #check that our files_output exist
-        if not self.utils.folderExists(self.files_output):
-            self.log.error("Output folder '%s' does not exists", self.files_output)
-            return False
-
-        return True
-
 
     def login(self):
         url = self.url_base+"my"
@@ -84,58 +47,50 @@ class moodle(object):
         return False
 
 
-    def parseCourse(self, semesterTitle, courseTitle, courseHref):
+    def course(self, coursehref):
         if self.loggedin == False:
             return False
 
-        outputFolder = semesterTitle+"/"+courseTitle
-        self.utils.makeDir(outputFolder)
-
-        courseUrl = self.url_base+courseHref
+        courseUrl = self.url_base+coursehref
         req = self.s.get(courseUrl)
         bs = BeautifulSoup(req.text, "html.parser")
+
+        courseDict = []
 
         for section in bs.findAll("li", {"class": "section"}):
             sectionContent = section.find("div", {"class": "content"})
             sectionSummary = sectionContent.find("div", {"class": "summary"}).getText().strip()
             sectionName = sectionContent.find("h3", {"class": "sectionname"}).getText().strip()
-            sectionName = self.utils.sanitizeInput(sectionName)
-            # replace all `.` in sectionNames
-            sectionName = sectionName.replace(".", "")
             sectionNumber = section["id"][8:]
 
-            sectionOutput = outputFolder+"/"+sectionNumber+"-"+sectionName+"/"
-            self.utils.makeDir(sectionOutput)
+            sectionDict = {
+                "name": sectionName,
+                "number": sectionNumber,
+                "summary": sectionSummary,
+                "children": [],
+            } 
 
-            if sectionSummary:
-                self.utils.fileWrite(sectionOutput+"summary.txt", sectionSummary)
 
             for r in sectionContent.findAll("li", {"class": "modtype_resource"}):
                 resource = self.modtype.resource(r)
-                self.utils.getFile(resource["link"], sectionOutput)
+                if resource:
+                    sectionDict["children"].append(resource)
 
             for r in sectionContent.findAll("li", {"class": "modtype_page"}):
                 resource = self.modtype.page(r)
                 if resource:
-                    self.utils.fileWrite(sectionOutput+resource["name"], resource["text"]) 
+                    sectionDict["children"].append(resource)
 
             for r in sectionContent.findAll("li", {"class": "modtype_folder"}):
                 resource = self.modtype.folder(r)
+                if resource:
+                    sectionDict["children"].append(resource)
 
-                if not resource:
-                    continue
+            courseDict.append(sectionDict)
 
-                resourceDir = sectionOutput+resource["name"]+"/"
+        return courseDict
 
-                self.utils.makeDir(resourceDir)
-                if resource["text"]:
-                    self.utils.fileWrite(resourceDir+"summary.txt", resource["text"])
-
-                for fFile in resource["files"]:
-                    self.utils.getFile(fFile["link"], resourceDir)
-
-
-    def parseSemesters(self):
+    def semesters(self):
         if self.loggedin == False:
             return False
 
@@ -147,7 +102,7 @@ class moodle(object):
         for semester in semesterUl.findAll("li"):
             semesterLink = semester.find("a")
             semesterName = semesterLink.getText()
-            semesterName = self.utils.sanitizeInput(semesterName)
+            semesterName = semesterName
             semesterHref = semesterLink["href"]
             semesterHref = semesterHref[1:]
             semesterDict = {
@@ -155,7 +110,6 @@ class moodle(object):
                     "href": semesterHref,
                     "courses": [],
             }
-            print("- "+semesterDict["name"])
 
             semesterContent = bs.find("div", {"class": "semester_category", "id": semesterHref})
 
@@ -163,36 +117,33 @@ class moodle(object):
                 courseInfo = course.find("h2", {"class": "title"})
                 courseName = courseInfo.getText()
                 courseNameSan = courseName[:courseName.rfind("(")-1]
-                courseName = self.utils.sanitizeInput(courseName)
-                courseNameSan = self.utils.sanitizeInput(courseNameSan)
+                courseName = courseName
 
                 courseLink = courseInfo.find("a")["href"][1:]
                 courseTeachers = course.find("div", {"class": "teacher_info"}).getText()[10:].split(", ")
                 courseDict = {
                         "name": courseName,
-                        "link": courseLink,
+                        "href": courseLink,
                         "teachers": courseTeachers,
                 }
                 semesterDict["courses"].append(courseDict)
-
-                print("\t - "+courseNameSan)
-                self.parseCourse(semesterName, courseNameSan, courseLink)
-
 
             semesters.append(semesterDict)
 
         return semesters
 
-username = os.getenv("MOODLE_USERNAME", "username")
-password = os.getenv("MOODLE_PASSWORD", "password")
+    def get(self, url, headers={}):
+        req = self.s.get(url, headers=headers)
+        return req
+        
+    def getFile(self, url, tempfile="file.tmp", headers={}):
+        self.log.debug("Getting file with url - %s", url)
 
-x = moodle(username, password)
-x.login()
-try: 
-    semesters = x.parseSemesters()
-except KeyboardInterrupt:
-    raise
-except:
-    raise
-finally:
-    x.database.save()
+        r = self.s.get(url, stream=True, headers=headers)
+
+        with open(tempfile, 'wb') as f:
+            for chunk in r.iter_content(chunk_size=1024):
+                if chunk:
+                    f.write(chunk)
+        return r
+

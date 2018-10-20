@@ -21,13 +21,12 @@ class Modtype(object):
         link = bs.find("a")["href"]
         fileid = self.getFileid(link)
         name = bs.find("span", {"class": "instancename"}).getText()
-        name = self.p.utils.sanitizeInput(name)
         
         if not fileid:
             self.p.log.error("Could not get fileid for url - %s", resourceLink)
             return False
 
-        return {"name": name, "link": link, "fileid": fileid}
+        return {"type": "resource", "name": name, "href": link, "fileid": fileid}
 
 
     def page(self, bs):
@@ -37,7 +36,6 @@ class Modtype(object):
 
         link = bs.find("a")["href"]
         name = bs.find("span", {"class": "instancename"}).getText()
-        name = self.p.utils.sanitizeInput(name)
 
         req = self.p.s.get(link)
         bsPage = BeautifulSoup(req.text, "html.parser")
@@ -46,7 +44,7 @@ class Modtype(object):
         if not mainContent:
             return False
 
-        return {"link": link, "name": name, "text": mainContent.getText().strip()}
+        return {"type": "page", "href": link, "name": name, "text": mainContent.getText().strip()}
 
     def folder(self, bs):
         # remove accesshide
@@ -56,9 +54,6 @@ class Modtype(object):
 
         link = bs.find("a")["href"]
         name = bs.find("span", {"class": "instancename"}).getText()
-        name = self.p.utils.sanitizeInput(name)
-        #remove any `.` in foldernames
-        name = name.replace(".", "")
 
         # get folder
         req = self.p.s.get(link)
@@ -77,9 +72,8 @@ class Modtype(object):
             for folderFile in folder.findAll("span", {"class": "fp-filename-icon"}):
                 fileLink = folderFile.find("a")["href"]
                 fileName = folderFile.find("span", {"class": "fp-filename"}).getText()
-                fileName = self.p.utils.sanitizeInput(fileName)
-                files.append({"name": fileName, "link": fileLink})
+                files.append({"name": fileName, "href": fileLink})
 
 
-        return {"name": name, "link": link, "files": files, "text": text}
+        return {"type": "folder", "name": name, "href": link, "files": files, "text": text}
 
